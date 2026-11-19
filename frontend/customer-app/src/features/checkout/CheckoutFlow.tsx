@@ -57,6 +57,7 @@ function CheckoutFlow({
   const subtotal = cartItems.reduce((sum, entry) => sum + entry.item.price * entry.quantity, 0)
   const total = subtotal + (checkoutConfig.deliveryCharge ?? 0)
   const missingSlots = mealTypes.filter((mealType) => !selectedSlots[mealType])
+  const missingDeliveryAddress = deliveryAddress.trim().length === 0
 
   if (confirmation) {
     return (
@@ -134,8 +135,14 @@ function CheckoutFlow({
               </button>
             </div>
             <div className="checkout-address-details">
-              <strong>{deliveryAddressType}</strong>
-              <span>{deliveryAddress}</span>
+              {deliveryAddress ? (
+                <>
+                  <strong>{deliveryAddressType}</strong>
+                  <span>{deliveryAddress}</span>
+                </>
+              ) : (
+                <span>No verified delivery address selected.</span>
+              )}
             </div>
           </section>
 
@@ -173,6 +180,11 @@ function CheckoutFlow({
               Choose a delivery slot for {missingSlots.map((type) => type).join(' and ')} to continue.
             </p>
           )}
+          {missingDeliveryAddress && (
+            <p className="checkout-validation-message" role="status">
+              Select a verified delivery address before continuing.
+            </p>
+          )}
           {checkoutConfig.deliveryCharge === null && (
             <p className="checkout-config-note">Delivery charges are not configured and are not included.</p>
           )}
@@ -192,7 +204,7 @@ function CheckoutFlow({
         </button>
         <button
           className="checkout-primary-button"
-          disabled={cartItems.length === 0 || missingSlots.length > 0}
+          disabled={cartItems.length === 0 || missingSlots.length > 0 || missingDeliveryAddress}
           onClick={() => setScreen('payment')}
           type="button"
         >

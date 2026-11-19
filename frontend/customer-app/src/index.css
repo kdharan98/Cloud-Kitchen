@@ -885,6 +885,18 @@ input:focus-visible {
   text-align: left;
 }
 
+.address-option:disabled {
+  color: #777;
+  cursor: not-allowed;
+}
+
+.location-coverage-placeholder {
+  margin: 12px 0 0;
+  color: #777;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .address-option > span:nth-child(2) {
   display: flex;
   flex: 1;

@@ -15,15 +15,21 @@ import BrandLogo from '../components/BrandLogo'
 import CartBar from '../components/CartBar'
 import FoodCard from '../components/FoodCard'
 import { cuisineCategories, mockMenu } from '../data/mockMenu'
+import AccountPage from '../features/account/AccountPage'
+import {
+  formatSavedAddress,
+  initialAddresses,
+  initialNotificationPreferences,
+  initialProfile,
+  type NotificationPreferences,
+  type SavedAddress,
+} from '../features/account/types'
 import CheckoutFlow from '../features/checkout/CheckoutFlow'
 import { getCartMealTypes } from '../features/checkout/checkoutUtils'
 import MealPlansPage from '../features/meal-plans/MealPlansPage'
+import HistoryPage from './HistoryPage'
+import './history-page.css'
 import type { CartItem, CuisineCategory, MenuItem, MenuMealType } from '../types/menu'
-
-const addresses = [
-  { name: 'Home', address: 'Semabakkam, Chennai' },
-  { name: 'Work', address: 'Tambaram, Chennai' },
-]
 
 function HomePage() {
   const [cart, setCart] = useState<Record<string, CartItem>>({})
@@ -31,7 +37,13 @@ function HomePage() {
     useState<Partial<Record<MenuMealType, string>>>({})
   const [selectedCategory, setSelectedCategory] = useState<CuisineCategory | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [location, setLocation] = useState(addresses[0].address)
+  const [savedAddresses, setSavedAddresses] = useState(initialAddresses)
+  const [selectedAddressId, setSelectedAddressId] = useState(initialAddresses[0].id)
+  const [location, setLocation] = useState(formatSavedAddress(initialAddresses[0]))
+  const [accountProfile, setAccountProfile] = useState(initialProfile)
+  const [notificationPreferences, setNotificationPreferences] = useState(
+    initialNotificationPreferences,
+  )
   const [activeNavigation, setActiveNavigation] = useState<NavigationItem>('Home')
   const [selectedOrderMode, setSelectedOrderMode] = useState<'order' | 'meal-plans'>('order')
   const [checkoutOpen, setCheckoutOpen] = useState(false)
@@ -77,18 +89,51 @@ function HomePage() {
   function handleNavigation(item: NavigationItem) {
     setActiveNavigation(item)
     setCheckoutOpen(false)
-    if (item !== 'Meal Plans') setSelectedOrderMode('order')
+    setNotice('')
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current)
     if (item === 'Home') {
+      setSelectedOrderMode('order')
       setSelectedCategory(null)
       setSearchQuery('')
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } else if (item === 'Search') {
+      setSelectedOrderMode('order')
       window.scrollTo({ top: 0, behavior: 'smooth' })
-    } else if (item === 'Meal Plans') {
-      setSelectedOrderMode('meal-plans')
+    } else if (item === 'Orders' || item === 'Meal Plans') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } else if (item === 'Account') {
+      setSelectedOrderMode('order')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } else {
+      setSelectedOrderMode('order')
       showNotice(`${item} will be available soon.`)
     }
+  }
+
+  function exploreMealPlans() {
+    setActiveNavigation('Home')
+    setSelectedOrderMode('meal-plans')
+    setSelectedCategory(null)
+    setSearchQuery('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function updateSavedAddresses(nextAddresses: SavedAddress[]) {
+    setSavedAddresses(nextAddresses)
+    const selectedAddress = nextAddresses.find((address) => address.id === selectedAddressId)
+    if (!selectedAddress || selectedAddress.coverageStatus !== 'current-selection') {
+      const currentAddress = nextAddresses.find(
+        (address) => address.coverageStatus === 'current-selection',
+      )
+      setSelectedAddressId(currentAddress?.id ?? '')
+      setLocation(currentAddress ? formatSavedAddress(currentAddress) : '')
+    }
+  }
+
+  function selectDeliveryAddress(address: SavedAddress | null) {
+    if (address && address.coverageStatus !== 'current-selection') return
+    setSelectedAddressId(address?.id ?? '')
+    setLocation(address ? formatSavedAddress(address) : '')
   }
 
   function renderMenuSection(title: string, items: MenuItem[]) {
@@ -123,6 +168,8 @@ function HomePage() {
   }
 
   const isSearchActive = activeNavigation === 'Search'
+  const isHistoryPage = activeNavigation === 'Orders' || activeNavigation === 'Meal Plans'
+  const isDedicatedPage = isHistoryPage || activeNavigation === 'Account'
 
   return (
     <div className="home-page">
@@ -153,22 +200,19 @@ function HomePage() {
           <span className="location-pin"><MapPin aria-hidden="true" size={17} /></span>
           <span className="delivery-copy">
             <span>Delivering to</span>
-            <strong>{location}</strong>
+            <strong>{location || 'No verified address selected'}</strong>
           </span>
           <span className="change-location">Change <ChevronDown aria-hidden="true" size={15} /></span>
         </button>
       </header>
 
-      {!checkoutOpen && (
+      {!checkoutOpen && !isDedicatedPage && (
         <div className="order-mode-sticky">
           <div aria-label="Choose order type" className="order-mode" role="group">
             <button
               aria-pressed={selectedOrderMode === 'order'}
               className={selectedOrderMode === 'order' ? 'is-selected' : ''}
-              onClick={() => {
-                setSelectedOrderMode('order')
-                if (activeNavigation === 'Meal Plans') setActiveNavigation('Home')
-              }}
+              onClick={() => setSelectedOrderMode('order')}
               type="button"
             >
               <ShoppingBag aria-hidden="true" size={16} />
@@ -193,7 +237,7 @@ function HomePage() {
             cart={cart}
             deliveryAddress={location}
             deliveryAddressType={
-              addresses.find((address) => address.address === location)?.name ?? 'Delivery'
+              savedAddresses.find((address) => address.id === selectedAddressId)?.label ?? 'Delivery'
             }
             onChangeAddress={() => setSheet('location')}
             onEditCart={() => setSheet('cart')}
@@ -205,12 +249,26 @@ function HomePage() {
             onSelectSlot={(mealType, slot) =>
               setSelectedDeliverySlots((current) => ({ ...current, [mealType]: slot }))
             }
-            onViewOrders={() => {
-              setCheckoutOpen(false)
-              setActiveNavigation('Orders')
-              showNotice('Orders will be available soon.')
-            }}
+            onViewOrders={() => handleNavigation('Orders')}
             selectedSlots={selectedDeliverySlots}
+          />
+        ) : activeNavigation === 'Orders' ? (
+          <HistoryPage kind="orders" onExplore={() => handleNavigation('Home')} />
+        ) : activeNavigation === 'Meal Plans' ? (
+          <HistoryPage kind="meal-plans" onExplore={exploreMealPlans} />
+        ) : activeNavigation === 'Account' ? (
+          <AccountPage
+            addresses={savedAddresses}
+            notifications={notificationPreferences}
+            onAddressesChange={updateSavedAddresses}
+            onNavigateHistory={(item) => handleNavigation(item)}
+            onNotificationsChange={(preferences: NotificationPreferences) =>
+              setNotificationPreferences(preferences)
+            }
+            onProfileChange={setAccountProfile}
+            onSelectAddress={selectDeliveryAddress}
+            profile={accountProfile}
+            selectedAddressId={selectedAddressId}
           />
         ) : selectedOrderMode === 'meal-plans' ? (
           <MealPlansPage onNotice={showNotice} />
@@ -300,7 +358,7 @@ function HomePage() {
 
       {notice && <div className="toast-message" role="status">{notice}</div>}
 
-      {!checkoutOpen && selectedOrderMode === 'order' && (
+      {!checkoutOpen && !isDedicatedPage && selectedOrderMode === 'order' && (
         <CartBar itemCount={cartCount} onViewCart={() => setSheet('cart')} total={cartTotal} />
       )}
       <BottomNavigation activeItem={activeNavigation} onNavigate={handleNavigation} />
@@ -308,21 +366,33 @@ function HomePage() {
       {sheet === 'location' && (
         <BottomSheet onClose={() => setSheet(null)} title="Choose delivery location">
           <div className="address-list">
-            {addresses.map((address) => (
+            {savedAddresses.map((address) => (
               <button
                 className="address-option"
-                key={address.name}
+                disabled={address.coverageStatus !== 'current-selection'}
+                key={address.id}
                 onClick={() => {
-                  setLocation(address.address)
+                  selectDeliveryAddress(address)
                   setSheet(null)
                 }}
                 type="button"
               >
                 <span className="address-pin"><MapPin size={18} /></span>
-                <span><strong>{address.name}</strong><small>{address.address}</small></span>
-                {location === address.address && <span className="address-selected">Selected</span>}
+                <span>
+                  <strong>{address.label}</strong>
+                  <small>{formatSavedAddress(address) || 'Address details not provided'}</small>
+                  {address.coverageStatus !== 'current-selection' && (
+                    <small>Coverage unverified; unavailable for checkout</small>
+                  )}
+                </span>
+                {selectedAddressId === address.id && <span className="address-selected">Selected</span>}
               </button>
             ))}
+            {savedAddresses.length === 0 && (
+              <p className="location-coverage-placeholder">
+                No verified delivery address is available. Add and verify an address from Account.
+              </p>
+            )}
           </div>
         </BottomSheet>
       )}
