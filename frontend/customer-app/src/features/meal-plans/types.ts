@@ -13,7 +13,7 @@ export type MealPlanStep =
 
 export interface MealPlanDraft {
   step: MealPlanStep
-  duration: PlanDuration
+  duration: PlanDuration | null
   mealTypes: MealType[]
   startDate: string
   deliveryDates: string[]

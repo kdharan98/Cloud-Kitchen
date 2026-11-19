@@ -77,14 +77,24 @@ function createInitialDraft(): MealPlanDraft {
   }
 }
 
+function createResetDraft(): MealPlanDraft {
+  return {
+    ...createInitialDraft(),
+    duration: null,
+    mealTypes: [],
+    startDate: '',
+  }
+}
+
 function isMealPlanDraft(value: unknown): value is MealPlanDraft {
   if (!value || typeof value !== 'object') return false
   const draft = value as Partial<MealPlanDraft>
   return (
     stepOrder.includes(draft.step as MealPlanStep) &&
-    (draft.duration === 'weekly' || draft.duration === 'monthly') &&
+    (draft.duration === null || draft.duration === 'weekly' || draft.duration === 'monthly') &&
     Array.isArray(draft.mealTypes) &&
     typeof draft.startDate === 'string' &&
+    (draft.startDate.length > 0 || draft.step === 'duration') &&
     Array.isArray(draft.deliveryDates) &&
     Boolean(draft.mealsByDate && typeof draft.mealsByDate === 'object')
   )
@@ -140,16 +150,19 @@ interface MealPlansPageProps {
 
 function MealPlansPage({ onNotice }: MealPlansPageProps) {
   const [draft, setDraft] = useState<MealPlanDraft>(loadDraft)
-  const [visibleMonth, setVisibleMonth] = useState(() => fromDateKey(draft.startDate))
   const [todayKey] = useState(() => toDateKey(new Date()))
   const nextAvailableStartDate = useMemo(
     () => getNextAvailableStartDate(fromDateKey(todayKey)),
     [todayKey],
   )
+  const [visibleMonth, setVisibleMonth] = useState(() =>
+    fromDateKey(draft.startDate || nextAvailableStartDate),
+  )
   const [activeDate, setActiveDate] = useState('')
   const [startDateError, setStartDateError] = useState('')
   const [copyMealTypes, setCopyMealTypes] = useState<MealType[]>([])
   const [copyTargets, setCopyTargets] = useState<string[]>([])
+  const [startOverOpen, setStartOverOpen] = useState(false)
   const [expandedMealSection, setExpandedMealSection] = useState<MealType | null>(
     () => draft.mealTypes[0] ?? null,
   )
@@ -158,7 +171,9 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
     window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft))
   }, [draft])
 
-  const endDate = getPlanEndDate(draft.startDate, draft.duration)
+  const planDuration = draft.duration ?? 'weekly'
+  const planStartDate = draft.startDate || nextAvailableStartDate
+  const endDate = getPlanEndDate(planStartDate, planDuration)
   const endDateKey = toDateKey(endDate)
   const endDateLabel = new Intl.DateTimeFormat('en-IN', {
     day: 'numeric',
@@ -169,10 +184,10 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-  }).format(fromDateKey(draft.startDate))
+  }).format(fromDateKey(planStartDate))
   const availableDates = useMemo(
-    () => getAvailableDates(draft.startDate, draft.duration),
-    [draft.startDate, draft.duration],
+    () => getAvailableDates(planStartDate, planDuration),
+    [planStartDate, planDuration],
   )
   const availableDateSet = useMemo(() => new Set(availableDates), [availableDates])
   const incompleteDates = draft.deliveryDates.filter(
@@ -198,11 +213,16 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
   }
 
   function resetDraft() {
-    setDraft(createInitialDraft())
+    const resetState = createResetDraft()
+    setDraft(resetState)
     setActiveDate('')
-    setVisibleMonth(fromDateKey(getNextAvailableStartDate()))
+    setVisibleMonth(fromDateKey(resetState.startDate || nextAvailableStartDate))
     setStartDateError('')
-    onNotice('Your meal plan draft has been cleared.')
+    setCopyMealTypes([])
+    setCopyTargets([])
+    setExpandedMealSection(null)
+    setStartOverOpen(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function chooseDuration(duration: PlanDuration) {
@@ -259,7 +279,7 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
       setStartDateError('')
     }
     updateDraft((current) => {
-      const eligibleDates = getAvailableDates(startDate, current.duration)
+      const eligibleDates = getAvailableDates(startDate, current.duration ?? 'weekly')
       return {
         ...current,
         startDate,
@@ -472,11 +492,14 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
           <h1>Your meals, your schedule.</h1>
           <p>Plan your vegetarian meals around your routine.</p>
         </div>
-        {draft.step === 'duration' && (
-          <button className="meal-plan-reset" onClick={resetDraft} type="button">
-            <RotateCcw size={14} /> Start over
-          </button>
-        )}
+        <button
+          aria-haspopup="dialog"
+          className="meal-plan-reset"
+          onClick={() => setStartOverOpen(true)}
+          type="button"
+        >
+          <RotateCcw size={14} /> Start over
+        </button>
       </div>
 
       <div aria-label="Subscription progress" className="meal-plan-progress">
@@ -603,7 +626,7 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
           </label>
           {startDateError && <p className="meal-plan-error" role="alert">{startDateError}</p>}
           <div className="subscription-date-summary">
-            <div><small>SUBSCRIPTION START</small><strong>{startDateLabel}</strong></div>
+            <div><small>SUBSCRIPTION START</small><strong>{draft.startDate ? startDateLabel : 'Choose a date'}</strong></div>
             <ChevronRight size={17} />
             <div><small>SUBSCRIPTION END</small><strong>{endDateLabel}</strong></div>
           </div>
@@ -618,7 +641,7 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
           <div className="meal-plan-section-title">
             <span className="meal-step-overline">STEP 4 OF 7</span>
             <h2>Choose your delivery days</h2>
-            <p>Select the dates you’d like meals delivered during your {draft.duration} plan.</p>
+            <p>Select the dates you’d like meals delivered during your {planDuration} plan.</p>
           </div>
           <div className="delivery-period-strip">
             <span><CalendarDays size={16} /> {startDateLabel} – {endDateLabel}</span>
@@ -890,7 +913,7 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
           <section className="review-summary-card">
             <div className="review-summary-heading">
               <span className="review-summary-icon"><CalendarDays size={18} /></span>
-              <div><strong>{draft.duration === 'weekly' ? 'Weekly' : 'Monthly'} plan</strong><small>{getMealTypeLabel(draft.mealTypes)}</small></div>
+              <div><strong>{planDuration === 'weekly' ? 'Weekly' : 'Monthly'} plan</strong><small>{getMealTypeLabel(draft.mealTypes)}</small></div>
             </div>
             <div className="review-summary-dates">
               <div><small>STARTS</small><strong>{startDateLabel}</strong></div>
@@ -983,7 +1006,7 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
             <p>A plan can only become active after an online payment gateway confirms payment. Subscription references, confirmations, and skip delivery will be available after that integration and the applicable business rules are configured.</p>
           </div>
           <div className="payment-summary">
-            <span>{draft.duration === 'weekly' ? 'Weekly' : 'Monthly'} · {formatDate(draft.startDate)} – {formatDate(endDateKey)}</span>
+            <span>{planDuration === 'weekly' ? 'Weekly' : 'Monthly'} · {formatDate(draft.startDate)} – {formatDate(endDateKey)}</span>
             <strong>₹{total}</strong>
           </div>
         </div>
@@ -996,19 +1019,29 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
           </button>
         )}
         {draft.step === 'duration' && (
-          <button className="meal-action-primary" onClick={() => goToStep('preferences')} type="button">
+          <button
+            className="meal-action-primary"
+            disabled={!draft.duration}
+            onClick={() => goToStep('preferences')}
+            type="button"
+          >
             Choose meals <ChevronRight size={17} />
           </button>
         )}
         {draft.step === 'preferences' && (
-          <button className="meal-action-primary" onClick={() => goToStep('start-date')} type="button">
+          <button
+            className="meal-action-primary"
+            disabled={draft.mealTypes.length === 0}
+            onClick={() => goToStep('start-date')}
+            type="button"
+          >
             Choose start date <ChevronRight size={17} />
           </button>
         )}
         {draft.step === 'start-date' && (
           <button
             className="meal-action-primary"
-            disabled={Boolean(startDateError)}
+            disabled={!draft.startDate || Boolean(startDateError)}
             onClick={() => goToStep('delivery-dates')}
             type="button"
           >
@@ -1054,6 +1087,30 @@ function MealPlansPage({ onNotice }: MealPlansPageProps) {
           </button>
         )}
       </div>
+      {startOverOpen && (
+        <div className="meal-plan-reset-backdrop">
+          <section
+            aria-describedby="meal-plan-reset-message"
+            aria-labelledby="meal-plan-reset-title"
+            aria-modal="true"
+            className="meal-plan-reset-dialog"
+            role="alertdialog"
+          >
+            <h2 id="meal-plan-reset-title">Start over?</h2>
+            <p id="meal-plan-reset-message">
+              Are you sure you want to start over? Your current meal plan selections and customisations will be cleared.
+            </p>
+            <div className="meal-plan-reset-dialog-actions">
+              <button autoFocus onClick={() => setStartOverOpen(false)} type="button">
+                Cancel
+              </button>
+              <button onClick={resetDraft} type="button">
+                Yes, start over
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </section>
   )
 }
